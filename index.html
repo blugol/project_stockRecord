@@ -539,6 +539,7 @@
     <div class="toolbar">
       <input type="search" id="q" placeholder="종목 검색" enterkeyhint="search" />
       <button class="btn btn-primary btn-add" id="addBtn" type="button">매매 추가</button>
+      <button class="btn btn-ghost" id="exportBtn" type="button">매매.txt 저장</button>
       <div class="chips" id="chips"></div>
     </div>
 
@@ -921,6 +922,99 @@
       `).join("");
     }
 
+    function mmdd(s) {
+      if (!s) return "";
+      const p = s.split("-");
+      return (p[1] || "") + (p[2] || "");
+    }
+
+    function tradesToTxt() {
+      const list = trades.slice().sort((a, b) => (b.sellDate || "").localeCompare(a.sellDate || ""));
+      return list.map((t) => {
+        const hold = holdDays(t);
+        const ret = pct(t.returnPct);
+        const note = t.note ? " / " + t.note : "";
+        if (t.split) {
+          return t.name + "\t: 분할매수 / " + mmdd(t.buyDate) + "매수 / " + mmdd(t.sellDate) + "매도 / " + hold + "D / " + ret + note;
+        }
+        if (t.buyPrice != null && t.sellPrice != null) {
+          return t.name + "\t: " + mmdd(t.buyDate) + "(" + t.buyPrice + ") - " + mmdd(t.sellDate) + "(" + t.sellPrice + ") / " + hold + "D / " + ret + note;
+        }
+        return t.name + "\t: " + mmdd(t.buyDate) + "매수 / " + mmdd(t.sellDate) + "매도 / " + hold + "D / " + ret + note;
+      }).join("\n\n") + "\n";
+    }
+
+    function idbHandle() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("stockRecord", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("files");
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => resolve(req.result);
+      });
+    }
+
+    async function getTxtHandle() {
+      const db = await idbHandle();
+      return new Promise((resolve, reject) => {
+        const g = db.transaction("files", "readonly").objectStore("files").get("매매.txt");
+        g.onsuccess = () => resolve(g.result || null);
+        g.onerror = () => reject(g.error);
+      });
+    }
+
+    async function setTxtHandle(handle) {
+      const db = await idbHandle();
+      return new Promise((resolve, reject) => {
+        const p = db.transaction("files", "readwrite").objectStore("files").put(handle, "매매.txt");
+        p.onsuccess = () => resolve();
+        p.onerror = () => reject(p.error);
+      });
+    }
+
+    async function writeSameFile(text) {
+      if (!window.showSaveFilePicker) return false;
+      let handle = await getTxtHandle().catch(() => null);
+      if (handle) {
+        const perm = await handle.queryPermission({ mode: "readwrite" });
+        if (perm !== "granted") {
+          const next = await handle.requestPermission({ mode: "readwrite" });
+          if (next !== "granted") handle = null;
+        }
+      }
+      if (!handle) {
+        handle = await window.showSaveFilePicker({
+          suggestedName: "매매.txt",
+          types: [{ description: "Text", accept: { "text/plain": [".txt"] } }]
+        });
+        await setTxtHandle(handle);
+      }
+      const w = await handle.createWritable();
+      await w.write(text);
+      await w.close();
+      return true;
+    }
+
+    async function exportTxt() {
+      const text = tradesToTxt();
+      const btn = document.getElementById("exportBtn");
+      try {
+        const wrote = await writeSameFile(text);
+        if (!wrote) {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+          a.download = "매매.txt";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }
+        btn.textContent = "저장됨";
+        setTimeout(() => { btn.textContent = "매매.txt 저장"; }, 1400);
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+        btn.textContent = "저장 실패";
+        setTimeout(() => { btn.textContent = "매매.txt 저장"; }, 1400);
+      }
+    }
+
     function renderAll() {
       renderStats();
       renderMonths();
@@ -990,6 +1084,7 @@
       renderMonths();
     });
     document.getElementById("addBtn").addEventListener("click", () => openForm(null));
+    document.getElementById("exportBtn").addEventListener("click", () => exportTxt());
     document.getElementById("fab").addEventListener("click", () => openForm(null));
     document.getElementById("cancelBtn").addEventListener("click", closeForm);
     document.getElementById("overlay").addEventListener("click", (e) => {
