@@ -7,19 +7,31 @@
 ## 구성
 
 ```
-index.html   매매 기록 페이지
-매매.txt     처음 옮긴 메모장 원본
-README.md    프로젝트 설명과 작업 원칙
-.gitignore   Git에 올리지 않을 파일
+index.html    매매 기록 페이지
+api/trades.js 폰·PC 공유용 저장 API
+매매.txt      처음 옮긴 메모장 원본
+README.md     프로젝트 설명과 작업 원칙
+.gitignore    Git에 올리지 않을 파일
 ```
 
-`index.html`을 브라우저에서 열면 됩니다.
+Vercel에 올린 주소로 열면 됩니다.
 
 ## 데이터
 
-- 페이지에서 추가·수정한 내용은 **그 브라우저**에 저장됩니다.
 - `매매.txt`는 자동으로 바뀌지 않습니다.
-- 폰과 PC는 아직 기록이 서로 맞춰지지 않습니다.
+- 공유하려면 Vercel에 KV(Redis)를 연결해야 합니다. 연결되면 폰과 PC가 같은 기록을 씁니다.
+- 연결 전에는 그 브라우저에만 저장됩니다.
+
+### Vercel KV 연결
+
+1. [Vercel 프로젝트](https://vercel.com/sons-projects-221daffe/project-stock-record-ox8q) → Storage
+2. Create Database → KV (Redis / Upstash)
+3. 이 프로젝트에 Connect
+4. Redeploy
+
+환경 변수 `KV_REST_API_URL`, `KV_REST_API_TOKEN`이 생기면 공유가 됩니다.
+
+주소만 알면 누구나 읽고 고칠 수 있으니, 링크는 본인만 쓰면 됩니다.
 
 ## GitHub
 

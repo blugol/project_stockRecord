@@ -363,6 +363,8 @@
       font-size: 12px;
       line-height: 1.6;
     }
+    .foot .sync.ok { color: var(--green); }
+    .foot .sync.bad { color: var(--amber); }
 
     .cards { display: none; }
     .card {
@@ -562,7 +564,8 @@
       <div class="cards" id="cards"></div>
     </section>
     <p class="foot">
-      추가·수정한 내용은 이 브라우저에 저장됩니다. 총 수익률은 각 매매 수익률을 더한 값입니다. (투자금 비중은 반영하지 않습니다)
+      <span id="sync" class="sync">저장소 연결 중…</span>
+      · 총 수익률은 각 매매 수익률을 더한 값입니다. (투자금 비중은 반영하지 않습니다)
     </p>
   </div>
 
@@ -644,9 +647,17 @@
     ];
 
     const state = { q: "", filter: "all", sortKey: "sellDate", sortDir: -1, editId: null, openMonth: null };
-    let trades = loadTrades();
+    let trades = [];
+    let remoteOk = false;
 
-    function loadTrades() {
+    function setSync(ok, text) {
+      remoteOk = ok;
+      const el = document.getElementById("sync");
+      el.className = "sync " + (ok ? "ok" : "bad");
+      el.textContent = text;
+    }
+
+    function loadLocal() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
@@ -657,8 +668,53 @@
       return SEED.map((t) => ({ ...t }));
     }
 
-    function saveTrades() {
+    async function saveTrades() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+      if (!remoteOk) return;
+      const res = await fetch("/api/trades", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trades })
+      });
+      if (!res.ok) {
+        setSync(false, "서버 저장 실패 · 이 브라우저에만 반영됨");
+        throw new Error("save failed");
+      }
+    }
+
+    async function pullRemote() {
+      if (!remoteOk) return;
+      if (document.getElementById("overlay").classList.contains("open")) return;
+      const res = await fetch("/api/trades");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!Array.isArray(data.trades)) return;
+      if (JSON.stringify(data.trades) !== JSON.stringify(trades)) {
+        trades = data.trades;
+        renderAll();
+      }
+    }
+
+    async function init() {
+      try {
+        const res = await fetch("/api/trades");
+        if (!res.ok) throw new Error("no api");
+        const data = await res.json();
+        if (Array.isArray(data.trades) && data.trades.length) {
+          trades = data.trades;
+        } else {
+          trades = loadLocal();
+          remoteOk = true;
+          await saveTrades();
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+        setSync(true, "폰과 PC에서 같은 기록을 씁니다");
+      } catch (e) {
+        trades = loadLocal();
+        setSync(false, "공유 저장소 없음 · 이 브라우저에만 저장됩니다");
+      }
+      renderAll();
+      setInterval(() => { pullRemote().catch(() => {}); }, 4000);
     }
 
     const styleOf = (days) => Number(days) <= 10 ? "swing" : Number(days) <= 40 ? "mid" : "long";
@@ -953,7 +1009,7 @@
       if (e.key === "Escape" && document.getElementById("overlay").classList.contains("open")) closeForm();
     });
 
-    document.getElementById("form").addEventListener("submit", (e) => {
+    document.getElementById("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = document.getElementById("fName").value.trim();
       const buyDate = document.getElementById("fBuyDate").value;
@@ -981,21 +1037,30 @@
       } else {
         trades = [next, ...trades];
       }
-      saveTrades();
+      try {
+        await saveTrades();
+      } catch (e) {
+        err.textContent = "서버 저장에 실패했습니다. 다시 시도하세요.";
+        return;
+      }
       closeForm();
       renderAll();
     });
 
-    document.getElementById("deleteBtn").addEventListener("click", () => {
+    document.getElementById("deleteBtn").addEventListener("click", async () => {
       if (!state.editId) return;
       if (!confirm("이 매매 기록을 삭제할까요?")) return;
       trades = trades.filter((t) => t.id !== state.editId);
-      saveTrades();
+      try {
+        await saveTrades();
+      } catch (e) {
+        return;
+      }
       closeForm();
       renderAll();
     });
 
-    renderAll();
+    init();
   </script>
 </body>
 </html>
