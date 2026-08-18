@@ -2,44 +2,43 @@
 
 스윙·중장기 주식 매매 수익률을 브라우저에서 보고, 추가·수정하는 페이지입니다.
 
-저장소: https://github.com/blugol/project_stockRecord
+- GitHub: https://github.com/blugol/project_stockRecord
+- 페이지: https://project-stock-record-ox8q.vercel.app
 
-## 구성
+## 폴더
 
 ```
-index.html    매매 기록 페이지
-api/trades.js 폰·PC 공유용 저장 API
-매매.txt      처음 옮긴 메모장 원본
-README.md     프로젝트 설명과 작업 원칙
-.gitignore    Git에 올리지 않을 파일
+index.html          매매 기록 페이지 (Vercel 루트)
+api/trades.js       폰·PC 공유 저장 API
+data/매매.txt       처음 옮긴 메모 원본
+docs/진행일지.md    날짜별 진행
+docs/기술스택.md    쓰는 기술
+docs/코드구조.md    파일·함수 역할
+README.md           이 설명과 작업 원칙
+.gitignore
 ```
+
+문서: [진행 일지](docs/진행일지.md) · [기술 스택](docs/기술스택.md) · [코드 구조](docs/코드구조.md)
 
 Vercel에 올린 주소로 열면 됩니다.
 
 ## 데이터
 
-- `매매.txt`는 자동으로 바뀌지 않습니다. PC에서 **매매.txt 저장**을 누르면 같은 파일에 현재 전체 기록을 덮어씁니다.
-- 공유하려면 Vercel에 KV(Redis)를 연결해야 합니다. 연결되면 폰과 PC가 같은 기록을 씁니다.
-- 연결 전에는 그 브라우저에만 저장됩니다.
+- 실제 기록은 Upstash Redis에 있습니다.
+- `data/매매.txt`는 자동으로 바뀌지 않습니다. PC에서 **매매.txt 저장**을 누르면 같은 파일에 현재 전체 기록을 덮어씁니다.
+- 공유하려면 Vercel에 Upstash Redis(KV)를 연결해야 합니다.
 
 ### Vercel KV 연결
 
 1. [Vercel 프로젝트](https://vercel.com/sons-projects-221daffe/project-stock-record-ox8q) → Storage
-2. Create Database → KV (Redis / Upstash)
-3. 이 프로젝트에 Connect
-4. Redeploy
+2. Upstash Redis(Free) 생성 후 이 프로젝트에 Connect
+3. Redeploy
 
-환경 변수 `KV_REST_API_URL`, `KV_REST_API_TOKEN`이 생기면 공유가 됩니다.
-
-주소만 알면 누구나 읽고 고칠 수 있으니, 링크는 본인만 쓰면 됩니다.
+환경 변수 `KV_REST_API_URL`, `KV_REST_API_TOKEN`이 생기면 공유가 됩니다. 주소만 알면 누구나 읽고 고칠 수 있으니 링크는 본인만 쓰면 됩니다.
 
 ## GitHub
 
 이 저장소가 기준입니다. 기능을 만들거나 고치면 **커밋한 뒤 `main`에 푸시**합니다.
-
-```
-https://github.com/blugol/project_stockRecord
-```
 
 ---
 
