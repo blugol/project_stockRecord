@@ -53,25 +53,11 @@
       gap: 16px;
       margin-bottom: 22px;
     }
-    .eyebrow {
-      color: var(--green);
-      font-size: 11px;
-      font-weight: 650;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      margin: 0 0 6px;
-    }
     h1 {
       margin: 0;
       font-size: 30px;
       font-weight: 720;
       letter-spacing: -0.04em;
-    }
-    .sub {
-      margin: 8px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
     }
     .account {
       flex-shrink: 0;
@@ -143,7 +129,9 @@
       border: 1px solid var(--line);
       border-radius: 16px;
       padding: 16px;
+      cursor: pointer;
     }
+    .stat:hover { border-color: #3d4d63; }
     .stat.featured {
       background: linear-gradient(180deg, rgba(62, 224, 160, 0.1), var(--bg-card));
       border-color: rgba(62, 224, 160, 0.28);
@@ -207,11 +195,6 @@
     .trend .dot { fill: var(--green); }
     .trend .lbl { fill: var(--dim); font-size: 10px; }
     .trend .val { fill: var(--green); font-size: 10px; font-weight: 650; }
-    .panel h2 .hint-inline {
-      margin-left: 8px;
-      font-weight: 500;
-      color: var(--dim);
-    }
     .months { display: grid; gap: 8px; }
     .month-block {
       border: 1px solid var(--line);
@@ -411,6 +394,18 @@
       background: var(--green-dim);
       color: var(--green);
     }
+    .detail {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      background: var(--bg-card);
+      border: 1px solid rgba(62, 224, 160, 0.28);
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .detail.show { display: block; }
+    .detail b { font-weight: 720; }
 
     .list-panel { padding: 14px 10px 10px; }
     .list-panel h2 { padding: 0 6px; }
@@ -618,9 +613,7 @@
   <div class="wrap">
     <header>
       <div>
-        <p class="eyebrow">스윙 · 중장기</p>
         <h1>매매 기록</h1>
-        <p class="sub">수익률을 달별로 보고, 종목은 눌러서 수정합니다.</p>
       </div>
       <div class="account">
         <div class="label">나의 계좌</div>
@@ -636,7 +629,7 @@
     <section class="stats" id="stats"></section>
 
     <section class="panel months-panel">
-      <h2>월별 매매 기준 <span class="hint-inline">달을 누르면 종목이 펼쳐집니다</span></h2>
+      <h2>월별 매매</h2>
       <div class="trend" id="trend"></div>
       <div class="months" id="months"></div>
     </section>
@@ -647,9 +640,10 @@
       <button class="btn btn-ghost" id="exportBtn" type="button">매매.txt 저장</button>
       <div class="chips" id="chips"></div>
     </div>
+    <div class="detail" id="detail"></div>
 
     <section class="panel list-panel">
-      <h2>전체 기록</h2>
+      <h2 id="listTitle">전체 기록</h2>
       <div class="table-wrap">
         <table>
           <thead>
@@ -745,11 +739,11 @@
     ];
 
     const FILTERS = [
-      { id: "all", label: "전체" },
-      { id: "swing", label: "스윙 ≤10일" },
-      { id: "mid", label: "중기 11–40일" },
-      { id: "long", label: "장기 41일+" },
-      { id: "split", label: "분할매수" }
+      { id: "all", label: "전체", info: "모든 매매" },
+      { id: "swing", label: "스윙", info: "보유 10일 이하" },
+      { id: "mid", label: "중기", info: "보유 11–40일" },
+      { id: "long", label: "장기", info: "보유 41일 이상" },
+      { id: "split", label: "분할매수", info: "나눠서 산 매매" }
     ];
 
     const state = { q: "", filter: "all", sortKey: "sellDate", sortDir: -1, editId: null, openMonth: null };
@@ -934,29 +928,24 @@
       const monthAvg = months.length ? months.reduce((s, m) => s + m.sum, 0) / months.length : null;
       if (!n) {
         document.getElementById("stats").innerHTML = `
-          <article class="stat featured">
+          <article class="stat featured" data-stat="total">
             <div class="stat-split">
               <div><div class="label">총 수익률</div><div class="value">—</div></div>
               <div><div class="label">월별평균</div><div class="value">—</div></div>
             </div>
-            <div class="hint">계좌 ${ACCOUNT}</div>
           </article>
-          <article class="stat"><div class="label">거래</div><div class="value">0건</div></article>
-          <article class="stat"><div class="label">평균 수익률</div><div class="value">—</div></article>
-          <article class="stat"><div class="label">최고</div><div class="value">—</div></article>
-          <article class="stat"><div class="label">평균 보유</div><div class="value">—</div></article>`;
+          <article class="stat" data-stat="count"><div class="label">거래</div><div class="value">0건</div></article>
+          <article class="stat" data-stat="avg"><div class="label">평균 수익률</div><div class="value">—</div></article>
+          <article class="stat" data-stat="best"><div class="label">최고</div><div class="value">—</div></article>
+          <article class="stat" data-stat="hold"><div class="label">평균 보유</div><div class="value">—</div></article>`;
         return;
       }
       const total = trades.reduce((s, t) => s + Number(t.returnPct || 0), 0);
       const avg = total / n;
-      const wins = trades.filter((t) => Number(t.returnPct) > 0).length;
       const best = trades.reduce((a, b) => Number(a.returnPct) > Number(b.returnPct) ? a : b);
       const hold = trades.reduce((s, t) => s + holdDays(t), 0) / n;
-      const swing = trades.filter((t) => styleOf(holdDays(t)) === "swing").length;
-      const mid = trades.filter((t) => styleOf(holdDays(t)) === "mid").length;
-      const long = trades.filter((t) => styleOf(holdDays(t)) === "long").length;
       document.getElementById("stats").innerHTML = `
-        <article class="stat featured">
+        <article class="stat featured" data-stat="total">
           <div class="stat-split">
             <div>
               <div class="label">총 수익률</div>
@@ -967,12 +956,11 @@
               <div class="value ${tone(monthAvg)}" data-count="${monthAvg}" data-kind="pct">${pct(monthAvg)}</div>
             </div>
           </div>
-          <div class="hint">매매 ${n}건 합계 · ${months.length}개월 · 계좌 ${ACCOUNT}</div>
         </article>
-        <article class="stat"><div class="label">거래</div><div class="value" data-count="${n}" data-kind="int" data-suffix="건">${n}건</div><div class="hint">승률 ${(wins / n * 100).toFixed(0)}%</div></article>
-        <article class="stat"><div class="label">평균 수익률</div><div class="value ${tone(avg)}" data-count="${avg}" data-kind="pct">${pct(avg)}</div><div class="hint">건당 단순평균</div></article>
-        <article class="stat"><div class="label">최고</div><div class="value ${tone(best.returnPct)}" data-count="${best.returnPct}" data-kind="pct">${pct(best.returnPct)}</div><div class="hint">${esc(best.name)}</div></article>
-        <article class="stat"><div class="label">평균 보유</div><div class="value" data-count="${hold}" data-kind="int" data-suffix="일">${hold.toFixed(0)}일</div><div class="hint">스윙 ${swing} · 중기 ${mid} · 장기 ${long}</div></article>
+        <article class="stat" data-stat="count"><div class="label">거래</div><div class="value" data-count="${n}" data-kind="int" data-suffix="건">${n}건</div></article>
+        <article class="stat" data-stat="avg"><div class="label">평균 수익률</div><div class="value ${tone(avg)}" data-count="${avg}" data-kind="pct">${pct(avg)}</div></article>
+        <article class="stat" data-stat="best"><div class="label">최고</div><div class="value ${tone(best.returnPct)}" data-count="${best.returnPct}" data-kind="pct">${pct(best.returnPct)}</div><div class="hint">${esc(best.name)}</div></article>
+        <article class="stat" data-stat="hold"><div class="label">평균 보유</div><div class="value" data-count="${hold}" data-kind="int" data-suffix="일">${hold.toFixed(0)}일</div></article>
       `;
     }
 
@@ -1017,6 +1005,23 @@
       return `<span class="tag ${st}">${styleLabel[st]}</span>${t.split ? `<span class="tag mid">분할</span>` : ""}`;
     }
 
+    function showDetail(html) {
+      const el = document.getElementById("detail");
+      el.classList.add("show");
+      el.innerHTML = html;
+    }
+
+    function applyFilter(id) {
+      state.filter = id;
+      renderChips();
+      renderTable();
+      const f = FILTERS.find((x) => x.id === id) || FILTERS[0];
+      const list = filtered();
+      const avg = list.length ? list.reduce((s, t) => s + Number(t.returnPct || 0), 0) / list.length : 0;
+      showDetail(`<b>${f.label}</b> · ${f.info} · ${list.length}건 · 평균 ${list.length ? pct(avg) : "—"}`);
+      document.querySelector(".list-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     function renderChips() {
       document.getElementById("chips").innerHTML = FILTERS.map((f) =>
         `<button class="chip${state.filter === f.id ? " active" : ""}" data-id="${f.id}" type="button">${f.label}</button>`
@@ -1025,6 +1030,9 @@
 
     function renderTable() {
       const list = filtered();
+      const f = FILTERS.find((x) => x.id === state.filter) || FILTERS[0];
+      const title = document.getElementById("listTitle");
+      if (title) title.textContent = f.id === "all" ? "전체 기록" : f.label;
       const body = document.getElementById("rows");
       const cards = document.getElementById("cards");
       if (!list.length) {
@@ -1273,9 +1281,40 @@
     document.getElementById("chips").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-id]");
       if (!btn) return;
-      state.filter = btn.dataset.id;
-      renderChips();
-      renderTable();
+      applyFilter(btn.dataset.id);
+    });
+    document.getElementById("stats").addEventListener("click", (e) => {
+      const card = e.target.closest("[data-stat]");
+      if (!card || !trades.length) return;
+      const k = card.dataset.stat;
+      if (k === "total") {
+        const months = monthStats();
+        showDetail(`<b>총 수익률</b> · ${months.length}개월 · 월별 합계는 아래에서 볼 수 있습니다.`);
+        document.querySelector(".months-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (k === "count") applyFilter("all");
+      if (k === "avg") {
+        state.sortKey = "returnPct";
+        state.sortDir = -1;
+        applyFilter("all");
+        const avg = trades.reduce((s, t) => s + Number(t.returnPct || 0), 0) / trades.length;
+        showDetail(`<b>평균 수익률</b> · 건당 ${pct(avg)} · 높은 순`);
+      }
+      if (k === "best") {
+        const best = trades.reduce((a, b) => Number(a.returnPct) > Number(b.returnPct) ? a : b);
+        state.filter = "all";
+        renderChips();
+        renderTable();
+        showDetail(`<b>최고</b> · ${esc(best.name)} · ${pct(best.returnPct)} · ${ymd(best.buyDate)}–${ymd(best.sellDate)}`);
+        highlight([best.id]);
+        document.querySelector(".list-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (k === "hold") {
+        const swing = trades.filter((t) => styleOf(holdDays(t)) === "swing").length;
+        const mid = trades.filter((t) => styleOf(holdDays(t)) === "mid").length;
+        const long = trades.filter((t) => styleOf(holdDays(t)) === "long").length;
+        showDetail(`<b>평균 보유</b> · 스윙 ${swing}건 · 중기 ${mid}건 · 장기 ${long}건`);
+      }
     });
     document.querySelectorAll("th[data-key]").forEach((th) => {
       th.addEventListener("click", () => {
