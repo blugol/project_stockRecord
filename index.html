@@ -394,18 +394,39 @@
       background: var(--green-dim);
       color: var(--green);
     }
-    .detail {
-      display: none;
-      margin-bottom: 12px;
-      padding: 12px 14px;
-      background: var(--bg-card);
-      border: 1px solid rgba(62, 224, 160, 0.28);
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
+
+    .peek-sum {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
     }
-    .detail.show { display: block; }
-    .detail b { font-weight: 720; }
+    .peek-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 52px 72px;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .peek-row:hover { filter: none; color: var(--text); }
+    .peek-row .days { color: var(--dim); font-size: 12px; }
+    .hold-row {
+      display: grid;
+      grid-template-columns: 44px 1fr 40px;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    .hold-row .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 
     .list-panel { padding: 14px 10px 10px; }
     .list-panel h2 { padding: 0 6px; }
@@ -640,7 +661,6 @@
       <button class="btn btn-ghost" id="exportBtn" type="button">매매.txt 저장</button>
       <div class="chips" id="chips"></div>
     </div>
-    <div class="detail" id="detail"></div>
 
     <section class="panel list-panel">
       <h2 id="listTitle">전체 기록</h2>
@@ -670,6 +690,18 @@
   </div>
 
   <button class="fab" id="fab" type="button">추가</button>
+
+  <div class="overlay" id="peek">
+    <div class="sheet">
+      <div class="grab"></div>
+      <h3 id="peekTitle"></h3>
+      <p class="peek-sum" id="peekSum"></p>
+      <div id="peekBody"></div>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" id="peekClose" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
 
   <div class="overlay" id="overlay">
     <form class="sheet" id="form" autocomplete="off">
@@ -882,10 +914,6 @@
     function filtered() {
       return trades.filter((t) => {
         if (state.q && !t.name.includes(state.q.trim())) return false;
-        if (state.filter === "swing") return styleOf(holdDays(t)) === "swing";
-        if (state.filter === "mid") return styleOf(holdDays(t)) === "mid";
-        if (state.filter === "long") return styleOf(holdDays(t)) === "long";
-        if (state.filter === "split") return t.split;
         return true;
       }).slice().sort((a, b) => {
         const av = state.sortKey === "holdingDays" ? holdDays(a) : a[state.sortKey];
@@ -1005,21 +1033,53 @@
       return `<span class="tag ${st}">${styleLabel[st]}</span>${t.split ? `<span class="tag mid">분할</span>` : ""}`;
     }
 
-    function showDetail(html) {
-      const el = document.getElementById("detail");
-      el.classList.add("show");
-      el.innerHTML = html;
+    function tradesOf(id) {
+      return trades.filter((t) => {
+        if (id === "swing") return styleOf(holdDays(t)) === "swing";
+        if (id === "mid") return styleOf(holdDays(t)) === "mid";
+        if (id === "long") return styleOf(holdDays(t)) === "long";
+        if (id === "split") return t.split;
+        return true;
+      }).slice().sort((a, b) => Number(b.returnPct) - Number(a.returnPct));
     }
 
-    function applyFilter(id) {
+    function peekTradeList(list) {
+      if (!list.length) return `<div class="empty">해당하는 매매가 없습니다.</div>`;
+      const max = Math.max(...list.map((t) => Math.abs(Number(t.returnPct || 0))), 1);
+      return list.map((t) => `
+        <button type="button" class="peek-row" data-edit="${t.id}">
+          <span>${esc(t.name)}${tags(t)}</span>
+          <span class="days">${holdDays(t)}일</span>
+          <span class="ret ${tone(t.returnPct)}">${pct(t.returnPct)}</span>
+        </button>
+        <div class="bar-track"><div class="bar-fill" style="width:${(Math.abs(Number(t.returnPct || 0)) / max) * 100}%"></div></div>
+      `).join("");
+    }
+
+    function openPeek(title, sum, body) {
+      document.getElementById("peekTitle").textContent = title;
+      document.getElementById("peekSum").innerHTML = sum;
+      document.getElementById("peekBody").innerHTML = body;
+      document.getElementById("peek").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closePeek() {
+      document.getElementById("peek").classList.remove("open");
+      if (!document.getElementById("overlay").classList.contains("open")) {
+        document.body.style.overflow = "";
+      }
+      state.filter = "all";
+      renderChips();
+    }
+
+    function openFilterPeek(id) {
+      const f = FILTERS.find((x) => x.id === id) || FILTERS[0];
+      const list = tradesOf(id);
+      const avg = list.length ? list.reduce((s, t) => s + Number(t.returnPct || 0), 0) / list.length : 0;
       state.filter = id;
       renderChips();
-      renderTable();
-      const f = FILTERS.find((x) => x.id === id) || FILTERS[0];
-      const list = filtered();
-      const avg = list.length ? list.reduce((s, t) => s + Number(t.returnPct || 0), 0) / list.length : 0;
-      showDetail(`<b>${f.label}</b> · ${f.info} · ${list.length}건 · 평균 ${list.length ? pct(avg) : "—"}`);
-      document.querySelector(".list-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      openPeek(f.label, `${f.info} · ${list.length}건 · 평균 ${list.length ? pct(avg) : "—"}`, peekTradeList(list));
     }
 
     function renderChips() {
@@ -1030,9 +1090,8 @@
 
     function renderTable() {
       const list = filtered();
-      const f = FILTERS.find((x) => x.id === state.filter) || FILTERS[0];
       const title = document.getElementById("listTitle");
-      if (title) title.textContent = f.id === "all" ? "전체 기록" : f.label;
+      if (title) title.textContent = "전체 기록";
       const body = document.getElementById("rows");
       const cards = document.getElementById("cards");
       if (!list.length) {
@@ -1241,6 +1300,7 @@
     }
 
     function openForm(trade) {
+      closePeek();
       const form = document.getElementById("form");
       form.reset();
       document.getElementById("formErr").textContent = "";
@@ -1262,7 +1322,9 @@
 
     function closeForm() {
       document.getElementById("overlay").classList.remove("open");
-      document.body.style.overflow = "";
+      if (!document.getElementById("peek").classList.contains("open")) {
+        document.body.style.overflow = "";
+      }
       state.editId = null;
     }
 
@@ -1281,39 +1343,60 @@
     document.getElementById("chips").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-id]");
       if (!btn) return;
-      applyFilter(btn.dataset.id);
+      openFilterPeek(btn.dataset.id);
     });
     document.getElementById("stats").addEventListener("click", (e) => {
       const card = e.target.closest("[data-stat]");
       if (!card || !trades.length) return;
       const k = card.dataset.stat;
+      const n = trades.length;
       if (k === "total") {
         const months = monthStats();
-        showDetail(`<b>총 수익률</b> · ${months.length}개월 · 월별 합계는 아래에서 볼 수 있습니다.`);
-        document.querySelector(".months-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+        const total = trades.reduce((s, t) => s + Number(t.returnPct || 0), 0);
+        const body = months.map((m) => `
+          <div class="hold-row">
+            <span>${Number(m.k.split("-")[1])}월</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${(Math.abs(m.sum) / Math.max(...months.map((x) => Math.abs(x.sum)), 1)) * 100}%"></div></div>
+            <span class="n ret ${tone(m.sum)}">${pct(m.sum)}</span>
+          </div>`).join("");
+        openPeek("총 수익률", `${pct(total)} · ${n}건 · ${months.length}개월`, body);
       }
-      if (k === "count") applyFilter("all");
-      if (k === "avg") {
-        state.sortKey = "returnPct";
-        state.sortDir = -1;
-        applyFilter("all");
-        const avg = trades.reduce((s, t) => s + Number(t.returnPct || 0), 0) / trades.length;
-        showDetail(`<b>평균 수익률</b> · 건당 ${pct(avg)} · 높은 순`);
-      }
-      if (k === "best") {
-        const best = trades.reduce((a, b) => Number(a.returnPct) > Number(b.returnPct) ? a : b);
-        state.filter = "all";
-        renderChips();
-        renderTable();
-        showDetail(`<b>최고</b> · ${esc(best.name)} · ${pct(best.returnPct)} · ${ymd(best.buyDate)}–${ymd(best.sellDate)}`);
-        highlight([best.id]);
-        document.querySelector(".list-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      if (k === "hold") {
+      if (k === "count") {
         const swing = trades.filter((t) => styleOf(holdDays(t)) === "swing").length;
         const mid = trades.filter((t) => styleOf(holdDays(t)) === "mid").length;
         const long = trades.filter((t) => styleOf(holdDays(t)) === "long").length;
-        showDetail(`<b>평균 보유</b> · 스윙 ${swing}건 · 중기 ${mid}건 · 장기 ${long}건`);
+        openPeek("거래", `${n}건`, `
+          <div class="hold-row"><span>스윙</span><div class="bar-track"><div class="bar-fill" style="width:${(swing / n) * 100}%"></div></div><span class="n">${swing}건</span></div>
+          <div class="hold-row"><span>중기</span><div class="bar-track"><div class="bar-fill" style="width:${(mid / n) * 100}%"></div></div><span class="n">${mid}건</span></div>
+          <div class="hold-row"><span>장기</span><div class="bar-track"><div class="bar-fill" style="width:${(long / n) * 100}%"></div></div><span class="n">${long}건</span></div>
+        `);
+      }
+      if (k === "avg") {
+        const avg = trades.reduce((s, t) => s + Number(t.returnPct || 0), 0) / n;
+        openPeek("평균 수익률", `건당 ${pct(avg)}`, peekTradeList(trades.slice().sort((a, b) => Number(b.returnPct) - Number(a.returnPct))));
+      }
+      if (k === "best") {
+        const best = trades.reduce((a, b) => Number(a.returnPct) > Number(b.returnPct) ? a : b);
+        openPeek("최고", `${esc(best.name)} · ${pct(best.returnPct)}`, `
+          <div class="peek-sum">${ymd(best.buyDate)} – ${ymd(best.sellDate)} · ${holdDays(best)}일</div>
+          <div class="peek-sum">매수 ${won(best.buyPrice)} · 매도 ${won(best.sellPrice)}</div>
+          ${best.note ? `<div class="peek-sum">${esc(best.note)}</div>` : ""}
+          <div class="sheet-actions"><button class="btn btn-primary" type="button" data-edit="${best.id}">수정</button></div>
+        `);
+      }
+      if (k === "hold") {
+        const swing = trades.filter((t) => styleOf(holdDays(t)) === "swing");
+        const mid = trades.filter((t) => styleOf(holdDays(t)) === "mid");
+        const long = trades.filter((t) => styleOf(holdDays(t)) === "long");
+        const hold = trades.reduce((s, t) => s + holdDays(t), 0) / n;
+        openPeek("평균 보유", `${hold.toFixed(0)}일`, `
+          <div class="hold-row"><span>스윙</span><div class="bar-track"><div class="bar-fill" style="width:${(swing.length / n) * 100}%"></div></div><span class="n">${swing.length}건</span></div>
+          ${peekTradeList(swing)}
+          <div class="hold-row"><span>중기</span><div class="bar-track"><div class="bar-fill" style="width:${(mid.length / n) * 100}%"></div></div><span class="n">${mid.length}건</span></div>
+          ${peekTradeList(mid)}
+          <div class="hold-row"><span>장기</span><div class="bar-track"><div class="bar-fill" style="width:${(long.length / n) * 100}%"></div></div><span class="n">${long.length}건</span></div>
+          ${peekTradeList(long)}
+        `);
       }
     });
     document.querySelectorAll("th[data-key]").forEach((th) => {
@@ -1340,7 +1423,10 @@
     document.getElementById("addBtn").addEventListener("click", () => openForm(null));
     document.getElementById("exportBtn").addEventListener("click", () => exportTxt());
     document.getElementById("fab").addEventListener("click", () => openForm(null));
-    document.getElementById("cancelBtn").addEventListener("click", closeForm);
+    document.getElementById("peekClose").addEventListener("click", closePeek);
+    document.getElementById("peek").addEventListener("click", (e) => {
+      if (e.target.id === "peek") closePeek();
+    });
     document.getElementById("overlay").addEventListener("click", (e) => {
       if (e.target.id === "overlay") closeForm();
     });
@@ -1355,7 +1441,9 @@
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && document.getElementById("overlay").classList.contains("open")) closeForm();
+      if (e.key !== "Escape") return;
+      if (document.getElementById("overlay").classList.contains("open")) closeForm();
+      else if (document.getElementById("peek").classList.contains("open")) closePeek();
     });
 
     document.getElementById("form").addEventListener("submit", async (e) => {
