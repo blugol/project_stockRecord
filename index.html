@@ -158,6 +158,16 @@
     }
 
     .panel.months-panel { padding: 14px; }
+    .trend {
+      margin: 0 0 12px;
+      min-height: 78px;
+    }
+    .trend svg { width: 100%; height: 78px; display: block; }
+    .trend .line { fill: none; stroke: var(--green); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .trend .area { fill: rgba(62, 224, 160, 0.12); }
+    .trend .dot { fill: var(--green); }
+    .trend .lbl { fill: var(--dim); font-size: 10px; }
+    .trend .val { fill: var(--green); font-size: 10px; font-weight: 650; }
     .panel h2 .hint-inline {
       margin-left: 8px;
       font-weight: 500;
@@ -198,12 +208,54 @@
     .month-summary .down { color: var(--red); }
     .month-summary .chev {
       color: var(--dim);
-      transition: transform 0.15s ease;
+      transition: transform 0.22s ease;
       justify-self: end;
     }
     .month-block.open .chev { transform: rotate(90deg); color: var(--green); }
-    .month-items { display: none; padding: 0 8px 8px; }
-    .month-block.open .month-items { display: grid; gap: 4px; }
+    .month-items {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.28s ease;
+      padding: 0 8px;
+    }
+    .month-block.open .month-items { grid-template-rows: 1fr; padding-bottom: 8px; }
+    .month-inner {
+      overflow: hidden;
+      display: grid;
+      gap: 4px;
+      min-height: 0;
+    }
+    .month-block.open .month-item {
+      animation: rise 0.32s ease both;
+    }
+    .flash { animation: flash 1.1s ease; }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes barIn {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+    @keyframes flash {
+      from { background: rgba(62, 224, 160, 0.22); }
+      to { background: transparent; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    .foot .sync.ok::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.8s ease infinite;
+      vertical-align: 1px;
+    }
     .month-item {
       width: 100%;
       display: grid;
@@ -235,6 +287,14 @@
       height: 100%;
       background: var(--green);
       border-radius: 99px;
+      transform-origin: left;
+      animation: barIn 0.55s ease both;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .month-items, .month-summary .chev, .bar-fill, .month-item, .flash, .foot .sync.ok::before {
+        animation: none !important;
+        transition: none !important;
+      }
     }
 
     .toolbar {
@@ -533,6 +593,7 @@
 
     <section class="panel months-panel">
       <h2>월별 매매 기준 <span class="hint-inline">달을 누르면 종목이 펼쳐집니다</span></h2>
+      <div class="trend" id="trend"></div>
       <div class="months" id="months"></div>
     </section>
 
@@ -691,8 +752,11 @@
       const data = await res.json();
       if (!Array.isArray(data.trades)) return;
       if (JSON.stringify(data.trades) !== JSON.stringify(trades)) {
+        const before = new Map(trades.map((t) => [String(t.id), JSON.stringify(t)]));
         trades = data.trades;
         renderAll();
+        const changed = trades.filter((t) => before.get(String(t.id)) !== JSON.stringify(t)).map((t) => t.id);
+        highlight(changed);
       }
     }
 
@@ -822,19 +886,19 @@
           <div class="stat-split">
             <div>
               <div class="label">총 수익률</div>
-              <div class="value ${tone(total)}">${pct(total)}</div>
+              <div class="value ${tone(total)}" data-count="${total}" data-kind="pct">${pct(total)}</div>
             </div>
             <div>
               <div class="label">월별평균</div>
-              <div class="value ${tone(monthAvg)}">${pct(monthAvg)}</div>
+              <div class="value ${tone(monthAvg)}" data-count="${monthAvg}" data-kind="pct">${pct(monthAvg)}</div>
             </div>
           </div>
           <div class="hint">매매 ${n}건 합계 · ${months.length}개월 · 계좌 ${ACCOUNT}</div>
         </article>
-        <article class="stat"><div class="label">거래</div><div class="value">${n}건</div><div class="hint">승률 ${(wins / n * 100).toFixed(0)}%</div></article>
-        <article class="stat"><div class="label">평균 수익률</div><div class="value ${tone(avg)}">${pct(avg)}</div><div class="hint">건당 단순평균</div></article>
-        <article class="stat"><div class="label">최고</div><div class="value ${tone(best.returnPct)}">${pct(best.returnPct)}</div><div class="hint">${esc(best.name)}</div></article>
-        <article class="stat"><div class="label">평균 보유</div><div class="value">${hold.toFixed(0)}일</div><div class="hint">스윙 ${swing} · 중기 ${mid} · 장기 ${long}</div></article>
+        <article class="stat"><div class="label">거래</div><div class="value" data-count="${n}" data-kind="int" data-suffix="건">${n}건</div><div class="hint">승률 ${(wins / n * 100).toFixed(0)}%</div></article>
+        <article class="stat"><div class="label">평균 수익률</div><div class="value ${tone(avg)}" data-count="${avg}" data-kind="pct">${pct(avg)}</div><div class="hint">건당 단순평균</div></article>
+        <article class="stat"><div class="label">최고</div><div class="value ${tone(best.returnPct)}" data-count="${best.returnPct}" data-kind="pct">${pct(best.returnPct)}</div><div class="hint">${esc(best.name)}</div></article>
+        <article class="stat"><div class="label">평균 보유</div><div class="value" data-count="${hold}" data-kind="int" data-suffix="일">${hold.toFixed(0)}일</div><div class="hint">스윙 ${swing} · 중기 ${mid} · 장기 ${long}</div></article>
       `;
     }
 
@@ -859,6 +923,7 @@
             <span class="chev">›</span>
           </button>
           <div class="month-items">
+            <div class="month-inner">
             ${r.items.map((t) => `
               <button type="button" class="month-item" data-edit="${t.id}">
                 <span class="mi-name">${esc(t.name)}</span>
@@ -867,6 +932,7 @@
                 <span class="bar-track"><span class="bar-fill" style="width:${(Math.abs(Number(t.returnPct || 0)) / monthMax) * 100}%"></span></span>
               </button>
             `).join("")}
+            </div>
           </div>
         </div>`;
       }).join("");
@@ -893,7 +959,7 @@
         return;
       }
       body.innerHTML = list.map((t) => `
-        <tr>
+        <tr data-row="${t.id}">
           <td>${ymd(t.sellDate)}</td>
           <td class="name">${esc(t.name)}${tags(t)}${t.note ? `<span class="note">${esc(t.note)}</span>` : ""}</td>
           <td>${ymd(t.buyDate)}</td>
@@ -905,7 +971,7 @@
         </tr>
       `).join("");
       cards.innerHTML = list.map((t) => `
-        <article class="card">
+        <article class="card" data-row="${t.id}">
           <div class="card-top">
             <div>
               <div class="card-name">${esc(t.name)}${tags(t)}</div>
@@ -1015,11 +1081,81 @@
       }
     }
 
+    function renderTrend() {
+      const el = document.getElementById("trend");
+      const rows = monthStats().slice().reverse();
+      if (!el) return;
+      if (rows.length < 2) {
+        el.innerHTML = "";
+        return;
+      }
+      const w = 640;
+      const h = 78;
+      const padX = 22;
+      const padT = 16;
+      const padB = 22;
+      const max = Math.max(...rows.map((r) => r.sum), 1);
+      const pts = rows.map((r, i) => {
+        const x = padX + (i / (rows.length - 1)) * (w - padX * 2);
+        const y = padT + (1 - r.sum / max) * (h - padT - padB);
+        return { x, y, r };
+      });
+      const d = pts.map((p, i) => (i ? "L" : "M") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+      const area = d + " L " + pts[pts.length - 1].x.toFixed(1) + " " + (h - padB) + " L " + pts[0].x.toFixed(1) + " " + (h - padB) + " Z";
+      el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path class="area" d="${area}"></path>
+        <path class="line" d="${d}"></path>
+        ${pts.map((p) => `<circle class="dot" cx="${p.x}" cy="${p.y}" r="3.2"></circle>
+          <text class="lbl" text-anchor="middle" x="${p.x}" y="${h - 6}">${Number(p.r.k.split("-")[1])}월</text>
+          <text class="val" text-anchor="middle" x="${p.x}" y="${Math.max(11, p.y - 8)}">${pct(p.r.sum)}</text>`).join("")}
+      </svg>`;
+    }
+
+    function reduceMotion() {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    }
+
+    function runCounts() {
+      if (reduceMotion()) return;
+      document.querySelectorAll("[data-count]").forEach((el) => {
+        const to = Number(el.dataset.count);
+        if (!Number.isFinite(to)) return;
+        const kind = el.dataset.kind;
+        const suffix = el.dataset.suffix || "";
+        const start = performance.now();
+        const dur = 650;
+        const tick = (now) => {
+          const t = Math.min(1, (now - start) / dur);
+          const e = 1 - Math.pow(1 - t, 3);
+          const cur = to * e;
+          if (kind === "pct") el.textContent = pct(cur);
+          else el.textContent = Math.round(cur) + suffix;
+          if (t < 1) requestAnimationFrame(tick);
+          else if (kind === "pct") el.textContent = pct(to);
+          else el.textContent = Math.round(to) + suffix;
+        };
+        requestAnimationFrame(tick);
+      });
+    }
+
+    function highlight(ids) {
+      if (!ids.length) return;
+      ids.forEach((id) => {
+        document.querySelectorAll(`[data-edit="${id}"], [data-row="${id}"]`).forEach((el) => {
+          el.classList.remove("flash");
+          void el.offsetWidth;
+          el.classList.add("flash");
+        });
+      });
+    }
+
     function renderAll() {
       renderStats();
+      renderTrend();
       renderMonths();
       renderChips();
       renderTable();
+      runCounts();
     }
 
     function openForm(trade) {
@@ -1081,7 +1217,12 @@
       if (!btn) return;
       const key = btn.dataset.month;
       state.openMonth = state.openMonth === key ? "" : key;
-      renderMonths();
+      document.querySelectorAll(".month-block").forEach((block) => {
+        const b = block.querySelector("[data-month]");
+        const open = b && b.dataset.month === state.openMonth;
+        block.classList.toggle("open", open);
+        if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
+      });
     });
     document.getElementById("addBtn").addEventListener("click", () => openForm(null));
     document.getElementById("exportBtn").addEventListener("click", () => exportTxt());
