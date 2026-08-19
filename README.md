@@ -10,6 +10,7 @@
 ```
 index.html          매매 기록 페이지 (Vercel 루트)
 api/trades.js       폰·PC 공유 저장 API
+api/market.js       코스피·코스닥 당일 지수
 data/매매.txt       처음 옮긴 메모 원본
 docs/진행일지.md    날짜별 진행
 docs/기술스택.md    쓰는 기술
@@ -25,6 +26,7 @@ Vercel에 올린 주소로 열면 됩니다.
 ## 데이터
 
 - 실제 기록은 Upstash Redis에 있습니다.
+- 코스피·코스닥은 네이버 증권 당일 지수를 `/api/market`으로 가져옵니다.
 - `data/매매.txt`는 자동으로 바뀌지 않습니다. PC에서 **매매.txt 저장**을 누르면 같은 파일에 현재 전체 기록을 덮어씁니다.
 - 공유하려면 Vercel에 Upstash Redis(KV)를 연결해야 합니다.
 

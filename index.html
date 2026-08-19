@@ -92,6 +92,45 @@
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.04em;
     }
+    .market {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .mk {
+      background: var(--bg-card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px;
+    }
+    .mk .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .mk .name { font-weight: 720; font-size: 13px; }
+    .mk .st {
+      color: var(--dim);
+      font-size: 11px;
+    }
+    .mk .price {
+      margin-top: 6px;
+      font-size: 20px;
+      font-weight: 720;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+    }
+    .mk .chg {
+      margin-top: 4px;
+      font-size: 13px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+    .mk.up .price, .mk.up .chg { color: #ff5a5f; }
+    .mk.down .price, .mk.down .chg { color: #4d8dff; }
+    .mk.flat .price, .mk.flat .chg { color: var(--muted); }
 
     .stats {
       display: grid;
@@ -589,6 +628,11 @@
       </div>
     </header>
 
+    <section class="market" id="market">
+      <article class="mk"><div class="row"><span class="name">코스피</span><span class="st">불러오는 중</span></div><div class="price">—</div><div class="chg"></div></article>
+      <article class="mk"><div class="row"><span class="name">코스닥</span><span class="st">불러오는 중</span></div><div class="price">—</div><div class="chg"></div></article>
+    </section>
+
     <section class="stats" id="stats"></section>
 
     <section class="panel months-panel">
@@ -779,7 +823,37 @@
         setSync(false, "공유 저장소 없음 · 이 브라우저에만 저장됩니다");
       }
       renderAll();
+      loadMarket();
       setInterval(() => { pullRemote().catch(() => {}); }, 4000);
+      setInterval(() => { loadMarket(); }, 60000);
+    }
+
+    function mkCard(label, d) {
+      if (!d) {
+        return `<article class="mk"><div class="row"><span class="name">${label}</span><span class="st">시세 없음</span></div><div class="price">—</div><div class="chg"></div></article>`;
+      }
+      const dir = d.up ? "up" : (Number(d.ratio) < 0 ? "down" : "flat");
+      const chg = String(d.change || "");
+      const ratio = String(d.ratio || "0");
+      const chgSigned = /^[+-]/.test(chg) ? chg : (d.up ? "+" + chg : chg);
+      const ratioSigned = /^[+-]/.test(ratio) ? ratio : (d.up ? "+" + ratio : ratio);
+      return `<article class="mk ${dir}">
+        <div class="row"><span class="name">${label}</span><span class="st">${d.status || ""}</span></div>
+        <div class="price">${d.price || "—"}</div>
+        <div class="chg">${chgSigned} (${ratioSigned}%)</div>
+      </article>`;
+    }
+
+    async function loadMarket() {
+      const box = document.getElementById("market");
+      try {
+        const res = await fetch("/api/market");
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        box.innerHTML = mkCard("코스피", data.kospi) + mkCard("코스닥", data.kosdaq);
+      } catch (e) {
+        box.innerHTML = mkCard("코스피", null) + mkCard("코스닥", null);
+      }
     }
 
     const styleOf = (days) => Number(days) <= 10 ? "swing" : Number(days) <= 40 ? "mid" : "long";
