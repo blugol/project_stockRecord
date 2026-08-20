@@ -750,6 +750,7 @@
   <script>
     const STORAGE_KEY = "stockRecord.trades.v1";
     const ACCOUNT = "5624-1531";
+    const PROD_TRADES = "https://project-stock-record-ox8q.vercel.app/api/trades";
     const SEED = [
       { id: 1, name: "LB세미콘", buyDate: "2026-07-01", sellDate: "2026-08-18", buyPrice: null, sellPrice: null, returnPct: 19.98, holdingDays: 48, split: false, note: "" },
       { id: 2, name: "디티씨", buyDate: "2026-05-28", sellDate: "2026-08-12", buyPrice: null, sellPrice: null, returnPct: 14.18, holdingDays: 76, split: false, note: "" },
@@ -780,50 +781,78 @@
 
     const state = { q: "", filter: "all", sortKey: "sellDate", sortDir: -1, editId: null, openMonth: null };
     let trades = [];
-    let remoteOk = false;
+    let saving = false;
 
     function setSync(ok, text) {
-      remoteOk = ok;
       const el = document.getElementById("sync");
       el.className = "sync " + (ok ? "ok" : "bad");
       el.textContent = text;
     }
 
-    function loadLocal() {
+    function readLocal() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length) return parsed;
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function tradesUrls() {
+      if (location.protocol === "file:") return [PROD_TRADES];
+      if (location.origin === "https://project-stock-record-ox8q.vercel.app") return ["/api/trades"];
+      return ["/api/trades", PROD_TRADES];
+    }
+
+    async function callTrades(method, body) {
+      const opts = { method, cache: "no-store", headers: {} };
+      if (method === "PUT") {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(body);
+      }
+      let last = null;
+      for (const url of tradesUrls()) {
+        try {
+          const res = await fetch(url, opts);
+          if (res.ok) return res;
+          last = res;
+          if (res.status === 400) return res;
+        } catch (e) {
+          last = e;
         }
-      } catch (e) {}
-      return SEED.map((t) => ({ ...t }));
+      }
+      if (last && last.status) return last;
+      throw last || new Error("no api");
     }
 
     async function saveTrades() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
-      if (!remoteOk) return;
-      const res = await fetch("/api/trades", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trades })
-      });
-      if (!res.ok) {
-        setSync(false, "서버 저장 실패 · 이 브라우저에만 반영됨");
-        throw new Error("save failed");
+      saving = true;
+      try {
+        const res = await callTrades("PUT", { trades });
+        if (!res.ok) {
+          setSync(false, "서버 저장 실패 · 이 브라우저에만 반영됨");
+          throw new Error("save failed");
+        }
+        setSync(true, "폰과 PC에서 같은 기록을 씁니다");
+      } finally {
+        saving = false;
       }
     }
 
     async function pullRemote() {
-      if (!remoteOk) return;
+      if (saving) return;
       if (document.getElementById("overlay").classList.contains("open")) return;
-      const res = await fetch("/api/trades");
+      const res = await callTrades("GET");
       if (!res.ok) return;
       const data = await res.json();
       if (!Array.isArray(data.trades)) return;
       if (JSON.stringify(data.trades) !== JSON.stringify(trades)) {
         const before = new Map(trades.map((t) => [String(t.id), JSON.stringify(t)]));
         trades = data.trades;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
         renderAll();
         const changed = trades.filter((t) => before.get(String(t.id)) !== JSON.stringify(t)).map((t) => t.id);
         highlight(changed);
@@ -832,20 +861,26 @@
 
     async function init() {
       try {
-        const res = await fetch("/api/trades");
+        const res = await callTrades("GET");
         if (!res.ok) throw new Error("no api");
         const data = await res.json();
-        if (Array.isArray(data.trades) && data.trades.length) {
-          trades = data.trades;
+        const remote = Array.isArray(data.trades) ? data.trades : [];
+        const local = readLocal();
+        if (remote.length) {
+          const remoteIds = new Set(remote.map((t) => String(t.id)));
+          const extras = local.filter((t) => !remoteIds.has(String(t.id)));
+          trades = extras.length ? extras.concat(remote) : remote;
+          setSync(true, "폰과 PC에서 같은 기록을 씁니다");
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+          if (extras.length) await saveTrades();
         } else {
-          trades = loadLocal();
-          remoteOk = true;
+          trades = local.length ? local : SEED.map((t) => ({ ...t }));
+          setSync(true, "폰과 PC에서 같은 기록을 씁니다");
           await saveTrades();
         }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
-        setSync(true, "폰과 PC에서 같은 기록을 씁니다");
       } catch (e) {
-        trades = loadLocal();
+        const local = readLocal();
+        trades = local.length ? local : SEED.map((t) => ({ ...t }));
         setSync(false, "공유 저장소 없음 · 이 브라우저에만 저장됩니다");
       }
       renderAll();
@@ -911,6 +946,23 @@
       return n === "" ? 0 : n;
     }
 
+    function recordSpan(list) {
+      let from = "";
+      let to = "";
+      for (const t of list) {
+        if (t.buyDate && (!from || t.buyDate < from)) from = t.buyDate;
+        if (t.sellDate && (!to || t.sellDate > to)) to = t.sellDate;
+      }
+      if (!from || !to) return null;
+      return { from, to, days: daysBetween(from, to) };
+    }
+
+    function spanText(list) {
+      const s = recordSpan(list);
+      if (!s) return "";
+      return ymd(s.from) + " – " + ymd(s.to) + " · " + s.days + "일";
+    }
+
     function filtered() {
       return trades.filter((t) => {
         if (state.q && !t.name.includes(state.q.trim())) return false;
@@ -961,6 +1013,7 @@
               <div><div class="label">총 수익률</div><div class="value">—</div></div>
               <div><div class="label">월별평균</div><div class="value">—</div></div>
             </div>
+            <div class="hint">기간 —</div>
           </article>
           <article class="stat" data-stat="count"><div class="label">거래</div><div class="value">0건</div></article>
           <article class="stat" data-stat="avg"><div class="label">평균 수익률</div><div class="value">—</div></article>
@@ -972,6 +1025,7 @@
       const avg = total / n;
       const best = trades.reduce((a, b) => Number(a.returnPct) > Number(b.returnPct) ? a : b);
       const hold = trades.reduce((s, t) => s + holdDays(t), 0) / n;
+      const span = spanText(trades);
       document.getElementById("stats").innerHTML = `
         <article class="stat featured" data-stat="total">
           <div class="stat-split">
@@ -984,6 +1038,7 @@
               <div class="value ${tone(monthAvg)}" data-count="${monthAvg}" data-kind="pct">${pct(monthAvg)}</div>
             </div>
           </div>
+          ${span ? `<div class="hint">${span}</div>` : ""}
         </article>
         <article class="stat" data-stat="count"><div class="label">거래</div><div class="value" data-count="${n}" data-kind="int" data-suffix="건">${n}건</div></article>
         <article class="stat" data-stat="avg"><div class="label">평균 수익률</div><div class="value ${tone(avg)}" data-count="${avg}" data-kind="pct">${pct(avg)}</div></article>
@@ -1359,7 +1414,7 @@
             <div class="bar-track"><div class="bar-fill" style="width:${(Math.abs(m.sum) / Math.max(...months.map((x) => Math.abs(x.sum)), 1)) * 100}%"></div></div>
             <span class="n ret ${tone(m.sum)}">${pct(m.sum)}</span>
           </div>`).join("");
-        openPeek("총 수익률", `${pct(total)} · ${n}건 · ${months.length}개월`, body);
+        openPeek("총 수익률", `${pct(total)} · ${n}건 · ${months.length}개월${spanText(trades) ? " · " + spanText(trades) : ""}`, body);
       }
       if (k === "count") {
         const swing = trades.filter((t) => styleOf(holdDays(t)) === "swing").length;
